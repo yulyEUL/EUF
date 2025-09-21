@@ -7,14 +7,16 @@ export async function GET() {
     const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
 
     if (!supabaseUrl || !supabaseServiceKey) {
-      return NextResponse.json({
-        status: "error",
-        message: "Missing environment variables",
-        details: {
-          hasUrl: !!supabaseUrl,
-          hasServiceKey: !!supabaseServiceKey,
+      return NextResponse.json(
+        {
+          error: "Missing environment variables",
+          details: {
+            hasUrl: !!supabaseUrl,
+            hasServiceKey: !!supabaseServiceKey,
+          },
         },
-      })
+        { status: 500 },
+      )
     }
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey, {
@@ -24,62 +26,65 @@ export async function GET() {
       },
     })
 
-    // Test basic connection by trying to query a simple table
-    const expectedTables = [
-      "users",
-      "staff",
-      "vehicles",
-      "customers",
-      "trips",
-      "earnings",
-      "expenses",
-      "tasks",
-      "maintenance_records",
-      "payments",
-      "invoices",
-      "vendors",
-      "expense_categories",
-      "import_logs",
-      "user_permissions",
-      "email_logs",
-      "parsed_emails",
-      "email_patterns",
-    ]
+    // Test basic connection
+    const { data: connectionTest, error: connectionError } = await supabase.from("users").select("count").limit(1)
 
-    let tablesFound = false
-    const foundTablesList = []
-
-    // Check if any of our expected tables exist
-    for (const tableName of expectedTables) {
-      try {
-        const { error } = await supabase.from(tableName).select("*").limit(0)
-        if (!error) {
-          tablesFound = true
-          foundTablesList.push(tableName)
-        }
-      } catch (e) {
-        // Table doesn't exist, continue
-        continue
-      }
+    if (connectionError) {
+      return NextResponse.json(
+        {
+          status: "error",
+          message: "Database connection failed",
+          error: connectionError.message,
+          code: connectionError.code,
+        },
+        { status: 500 },
+      )
     }
+
+    // Test RPC functions
+    const { data: rpcTest, error: rpcError } = await supabase.rpc("get_table_names")
+
+    // Test information_schema access
+    const { data: schemaTest, error: schemaError } = await supabase
+      .from("information_schema.tables")
+      .select("table_name")
+      .eq("table_schema", "public")
+      .limit(5)
 
     return NextResponse.json({
       status: "success",
-      message: tablesFound
-        ? "Database connection successful and tables exist"
-        : "Database connection successful but no tables found",
-      supabaseUrl: supabaseUrl.substring(0, 30) + "...",
-      tablesFound,
-      foundTables: foundTablesList,
-      tableCount: foundTablesList.length,
+      message: "Database connection successful",
+      tests: {
+        basicConnection: {
+          success: !connectionError,
+          error: connectionError?.message,
+        },
+        rpcFunctions: {
+          success: !rpcError,
+          error: rpcError?.message,
+          data: rpcTest?.slice(0, 5),
+        },
+        schemaAccess: {
+          success: !schemaError,
+          error: schemaError?.message,
+          data: schemaTest?.slice(0, 5),
+        },
+      },
+      environment: {
+        hasUrl: !!supabaseUrl,
+        hasServiceKey: !!supabaseServiceKey,
+        urlPreview: supabaseUrl ? `${supabaseUrl.substring(0, 20)}...` : "missing",
+      },
     })
   } catch (error) {
-    return NextResponse.json({
-      status: "connection_error",
-      message: "Failed to connect to database",
-      error: error instanceof Error ? error.message : "Unknown error",
-      code: (error as any)?.code || "UNKNOWN",
-      details: (error as any)?.details || null,
-    })
+    console.error("Test DB error:", error)
+    return NextResponse.json(
+      {
+        status: "error",
+        message: "Unexpected error during database test",
+        error: error instanceof Error ? error.message : "Unknown error",
+      },
+      { status: 500 },
+    )
   }
 }
