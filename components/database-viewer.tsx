@@ -6,7 +6,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
-import { RefreshCw, Database, TableIcon, AlertCircle } from "lucide-react"
+import { RefreshCw, Database, TableIcon, AlertCircle, CheckCircle } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 
@@ -22,38 +22,55 @@ interface DatabaseSchema {
   [tableName: string]: Column[]
 }
 
+interface ApiResponse {
+  schema: DatabaseSchema
+  tableCount: number
+  message: string
+  error?: string
+  details?: string
+  hint?: string
+}
+
 export function DatabaseViewer() {
   const [schema, setSchema] = useState<DatabaseSchema>({})
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [connectionStatus, setConnectionStatus] = useState<"checking" | "connected" | "error">("checking")
   const { toast } = useToast()
 
   const fetchSchema = async () => {
     setLoading(true)
     setError(null)
+    setConnectionStatus("checking")
+
     try {
       const response = await fetch("/api/database/schema")
-      const data = await response.json()
+      const data: ApiResponse = await response.json()
 
       if (response.ok) {
         setSchema(data.schema || {})
+        setConnectionStatus("connected")
+
+        const tableCount = Object.keys(data.schema || {}).length
         toast({
-          title: "Schema Loaded",
-          description: `Found ${Object.keys(data.schema || {}).length} tables`,
+          title: "Database Connected",
+          description: `Found ${tableCount} tables`,
         })
       } else {
         setError(data.error || "Failed to fetch database schema")
+        setConnectionStatus("error")
         toast({
-          title: "Error",
+          title: "Connection Error",
           description: data.error || "Failed to fetch database schema",
           variant: "destructive",
         })
       }
     } catch (error) {
-      const errorMessage = "Failed to connect to database"
+      const errorMessage = "Failed to connect to database API"
       setError(errorMessage)
+      setConnectionStatus("error")
       toast({
-        title: "Connection Error",
+        title: "API Error",
         description: errorMessage,
         variant: "destructive",
       })
@@ -77,11 +94,12 @@ export function DatabaseViewer() {
             <Database className="h-5 w-5" />
             Database Schema
           </CardTitle>
-          <CardDescription>Loading database structure...</CardDescription>
+          <CardDescription>Connecting to database...</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="flex items-center justify-center py-8">
             <RefreshCw className="h-6 w-6 animate-spin" />
+            <span className="ml-2">Loading database schema...</span>
           </div>
         </CardContent>
       </Card>
@@ -95,27 +113,46 @@ export function DatabaseViewer() {
           <CardTitle className="flex items-center gap-2">
             <Database className="h-5 w-5" />
             Database Schema
+            <Badge variant="destructive" className="ml-2">
+              <AlertCircle className="h-3 w-3 mr-1" />
+              Connection Failed
+            </Badge>
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <Alert variant="destructive">
+          <Alert variant="destructive" className="mb-4">
             <AlertCircle className="h-4 w-4" />
             <AlertDescription>
               <strong>Database Connection Error:</strong> {error}
-              <br />
-              <br />
-              Make sure you have:
-              <ul className="list-disc list-inside mt-2 space-y-1">
-                <li>Set up your Supabase project</li>
-                <li>Added environment variables</li>
-                <li>Run the database setup script</li>
-              </ul>
             </AlertDescription>
           </Alert>
-          <Button onClick={fetchSchema} className="mt-4">
-            <RefreshCw className="h-4 w-4 mr-2" />
-            Retry Connection
-          </Button>
+
+          <div className="space-y-4">
+            <div>
+              <h4 className="font-semibold mb-2">Troubleshooting Steps:</h4>
+              <ol className="list-decimal list-inside space-y-2 text-sm">
+                <li>
+                  Check your Vercel environment variables:
+                  <ul className="list-disc list-inside ml-4 mt-1">
+                    <li>
+                      <code>NEXT_PUBLIC_SUPABASE_URL</code>
+                    </li>
+                    <li>
+                      <code>SUPABASE_SERVICE_ROLE_KEY</code>
+                    </li>
+                  </ul>
+                </li>
+                <li>Make sure your Supabase project is active</li>
+                <li>Verify you ran the database setup script</li>
+                <li>Check if your Supabase service role key has the right permissions</li>
+              </ol>
+            </div>
+
+            <Button onClick={fetchSchema} className="w-full">
+              <RefreshCw className="h-4 w-4 mr-2" />
+              Retry Connection
+            </Button>
+          </div>
         </CardContent>
       </Card>
     )
@@ -129,6 +166,10 @@ export function DatabaseViewer() {
             <CardTitle className="flex items-center gap-2">
               <Database className="h-5 w-5" />
               Database Schema
+              <Badge variant="default" className="ml-2">
+                <CheckCircle className="h-3 w-3 mr-1" />
+                Connected
+              </Badge>
             </CardTitle>
             <CardDescription>
               {tableNames.length} tables • {totalColumns} total columns
@@ -145,10 +186,12 @@ export function DatabaseViewer() {
           <Alert>
             <AlertCircle className="h-4 w-4" />
             <AlertDescription>
-              <strong>No tables found.</strong> Run the database setup script to create your tables.
+              <strong>No tables found.</strong> Your database connection is working, but no tables exist yet.
               <br />
               <br />
-              Go to the Scripts section and run: <code>scripts/create-complete-schema.sql</code>
+              <strong>Next step:</strong> Run the database setup script to create your tables.
+              <br />
+              Go to your Supabase SQL Editor and run: <code>scripts/complete-setup.sql</code>
             </AlertDescription>
           </Alert>
         ) : (
