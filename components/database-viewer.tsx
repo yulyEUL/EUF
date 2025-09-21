@@ -6,7 +6,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
-import { RefreshCw, Database, TableIcon, AlertCircle, CheckCircle } from "lucide-react"
+import { RefreshCw, Database, TableIcon, AlertCircle, CheckCircle, Settings } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 
@@ -44,7 +44,13 @@ export function DatabaseViewer() {
     setConnectionStatus("checking")
 
     try {
-      const response = await fetch("/api/database/schema")
+      const response = await fetch("/api/database/schema", {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+        },
+      })
+
       const data: ApiResponse = await response.json()
 
       if (response.ok) {
@@ -129,23 +135,45 @@ export function DatabaseViewer() {
 
           <div className="space-y-4">
             <div>
-              <h4 className="font-semibold mb-2">Troubleshooting Steps:</h4>
-              <ol className="list-decimal list-inside space-y-2 text-sm">
+              <h4 className="font-semibold mb-2 flex items-center gap-2">
+                <Settings className="h-4 w-4" />
+                Troubleshooting Steps:
+              </h4>
+              <ol className="list-decimal list-inside space-y-3 text-sm">
                 <li>
-                  Check your Vercel environment variables:
-                  <ul className="list-disc list-inside ml-4 mt-1">
+                  <strong>Check your Vercel environment variables:</strong>
+                  <ul className="list-disc list-inside ml-4 mt-2 space-y-1">
                     <li>
-                      <code>NEXT_PUBLIC_SUPABASE_URL</code>
+                      <code className="bg-gray-100 px-2 py-1 rounded">NEXT_PUBLIC_SUPABASE_URL</code>
                     </li>
                     <li>
-                      <code>SUPABASE_SERVICE_ROLE_KEY</code>
+                      <code className="bg-gray-100 px-2 py-1 rounded">SUPABASE_SERVICE_ROLE_KEY</code>
                     </li>
                   </ul>
                 </li>
-                <li>Make sure your Supabase project is active</li>
-                <li>Verify you ran the database setup script</li>
-                <li>Check if your Supabase service role key has the right permissions</li>
+                <li>
+                  <strong>Verify your Supabase project is active</strong>
+                  <br />
+                  <span className="text-muted-foreground">Go to supabase.com and check your project status</span>
+                </li>
+                <li>
+                  <strong>Run the database setup script</strong>
+                  <br />
+                  <span className="text-muted-foreground">Execute the SQL script in your Supabase SQL Editor</span>
+                </li>
+                <li>
+                  <strong>Check service role key permissions</strong>
+                  <br />
+                  <span className="text-muted-foreground">Make sure it has full database access</span>
+                </li>
               </ol>
+            </div>
+
+            <div className="bg-blue-50 p-4 rounded-lg">
+              <h5 className="font-semibold text-blue-900 mb-2">Quick Fix:</h5>
+              <p className="text-blue-800 text-sm">
+                Go to your Supabase project → Settings → API → Copy your service role key and update it in Vercel.
+              </p>
             </div>
 
             <Button onClick={fetchSchema} className="w-full">
@@ -191,7 +219,7 @@ export function DatabaseViewer() {
               <br />
               <strong>Next step:</strong> Run the database setup script to create your tables.
               <br />
-              Go to your Supabase SQL Editor and run: <code>scripts/complete-setup.sql</code>
+              Go to your Supabase SQL Editor and run the complete setup script.
             </AlertDescription>
           </Alert>
         ) : (
