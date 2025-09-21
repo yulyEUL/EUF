@@ -25,6 +25,8 @@ interface ApiResponse {
   tableCount: number
   message: string
   method?: string
+  foundTables?: string[]
+  tableNames?: string[]
   error?: string
   details?: string
   code?: string
@@ -35,6 +37,7 @@ export function DatabaseViewer() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [openTables, setOpenTables] = useState<Set<string>>(new Set())
+  const [apiResponse, setApiResponse] = useState<ApiResponse | null>(null)
 
   const fetchSchema = async () => {
     try {
@@ -50,6 +53,7 @@ export function DatabaseViewer() {
       })
 
       const data: ApiResponse = await response.json()
+      setApiResponse(data)
 
       if (!response.ok) {
         throw new Error(data.error || `HTTP ${response.status}: ${response.statusText}`)
@@ -188,6 +192,11 @@ export function DatabaseViewer() {
                 ? `${tableNames.length} tables • ${totalColumns} total columns`
                 : "Database connected but no tables found"}
             </CardDescription>
+            {apiResponse && (
+              <div className="text-xs text-muted-foreground mt-1">
+                Method: {apiResponse.method} • {apiResponse.message}
+              </div>
+            )}
           </div>
           <div className="flex gap-2">
             {tableNames.length > 0 && (
@@ -213,6 +222,9 @@ export function DatabaseViewer() {
               <strong>Next step:</strong> Run the database setup script in your Supabase SQL Editor:
               <br />
               <code className="bg-muted px-2 py-1 rounded text-sm">scripts/create-complete-schema.sql</code>
+              <br />
+              <br />
+              <strong>Debug info:</strong> {apiResponse?.message}
             </AlertDescription>
           </Alert>
         ) : (
