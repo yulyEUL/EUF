@@ -3,87 +3,86 @@ import { NextResponse } from "next/server"
 
 export async function GET() {
   try {
-    // Check if environment variables exist
+    // Log environment variables for debugging (without exposing sensitive data)
+    console.log("Environment check:", {
+      hasUrl: !!process.env.NEXT_PUBLIC_SUPABASE_URL,
+      hasServiceKey: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
+      urlLength: process.env.NEXT_PUBLIC_SUPABASE_URL?.length || 0,
+      keyLength: process.env.SUPABASE_SERVICE_ROLE_KEY?.length || 0,
+    })
+
     if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
       return NextResponse.json(
         {
           error: "Missing environment variables",
-          details: "NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY not found",
-          hint: "Check your Vercel environment variables",
+          details: {
+            hasUrl: !!process.env.NEXT_PUBLIC_SUPABASE_URL,
+            hasServiceKey: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
+          },
         },
         { status: 500 },
       )
     }
 
-    const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
+    const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false,
+      },
+    })
 
-    // Test connection first
-    const { data: testData, error: testError } = await supabase
-      .from("pg_tables")
-      .select("tablename")
-      .eq("schemaname", "public")
+    // Test basic connection first
+    const { data: connectionTest, error: connectionError } = await supabase
+      .from("information_schema.tables")
+      .select("count")
       .limit(1)
 
-    if (testError) {
-      console.error("Connection test failed:", testError)
-
-      // Try alternative method using raw SQL
-      const { data: rawData, error: rawError } = await supabase.rpc("get_tables")
-
-      if (rawError) {
-        return NextResponse.json(
-          {
-            error: "Database connection failed",
-            details: testError.message,
-            hint: "Check your Supabase service role key and database permissions",
-          },
-          { status: 500 },
-        )
-      }
+    if (connectionError) {
+      console.error("Connection test failed:", connectionError)
+      return NextResponse.json(
+        {
+          error: "Database connection failed",
+          details: connectionError.message,
+          hint: "Check your Supabase service role key and project status",
+        },
+        { status: 500 },
+      )
     }
 
-    // Get all tables using pg_tables (more reliable)
-    const { data: tablesData, error: tablesError } = await supabase
-      .from("pg_tables")
-      .select("tablename")
-      .eq("schemaname", "public")
-      .not("tablename", "like", "pg_%")
+    // Get all user tables
+    const { data: tables, error: tablesError } = await supabase
+      .from("information_schema.tables")
+      .select("table_name")
+      .eq("table_schema", "public")
+      .eq("table_type", "BASE TABLE")
 
     if (tablesError) {
-      console.error("Tables query error:", tablesError)
+      console.error("Tables query failed:", tablesError)
       return NextResponse.json(
         {
           error: "Failed to fetch tables",
           details: tablesError.message,
-          hint: "Make sure your database is set up and accessible",
         },
         { status: 500 },
       )
     }
 
+    const schema: Record<string, any[]> = {}
+
     // Get columns for each table
-    const schema: { [key: string]: any[] } = {}
+    if (tables && tables.length > 0) {
+      for (const table of tables) {
+        const { data: columns, error: columnsError } = await supabase
+          .from("information_schema.columns")
+          .select("column_name, data_type, is_nullable, column_default, character_maximum_length")
+          .eq("table_schema", "public")
+          .eq("table_name", table.table_name)
+          .order("ordinal_position")
 
-    if (tablesData && tablesData.length > 0) {
-      for (const table of tablesData) {
-        const { data: columnsData, error: columnsError } = await supabase.rpc("get_table_columns", {
-          table_name: table.tablename,
-        })
-
-        if (!columnsError && columnsData) {
-          schema[table.tablename] = columnsData
+        if (!columnsError && columns) {
+          schema[table.table_name] = columns
         } else {
-          // Fallback to information_schema
-          const { data: fallbackColumns, error: fallbackError } = await supabase
-            .from("information_schema.columns")
-            .select("column_name, data_type, is_nullable, column_default, character_maximum_length")
-            .eq("table_schema", "public")
-            .eq("table_name", table.tablename)
-            .order("ordinal_position")
-
-          if (!fallbackError && fallbackColumns) {
-            schema[table.tablename] = fallbackColumns
-          }
+          console.error(`Failed to get columns for ${table.table_name}:`, columnsError)
         }
       }
     }
@@ -91,18 +90,14 @@ export async function GET() {
     return NextResponse.json({
       schema,
       tableCount: Object.keys(schema).length,
-      message:
-        Object.keys(schema).length === 0
-          ? "No tables found. Run the database setup script."
-          : "Schema loaded successfully",
+      message: Object.keys(schema).length === 0 ? "No tables found" : "Schema loaded successfully",
     })
   } catch (error) {
     console.error("Database schema error:", error)
     return NextResponse.json(
       {
-        error: "Database connection failed",
-        details: error instanceof Error ? error.message : "Unknown error",
-        hint: "Check your Supabase environment variables and database setup",
+        error: "Unexpected error",
+        details: error instanceof Error ? error.message : "Unknown error occurred",
       },
       { status: 500 },
     )
