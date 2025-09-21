@@ -1,39 +1,39 @@
 -- Create functions to get database schema information
--- Run this in your Supabase SQL Editor
+-- Run this AFTER creating the main schema
 
 -- Function to get all table names
 CREATE OR REPLACE FUNCTION get_table_names()
-RETURNS text[] AS $$
+RETURNS TEXT[] AS $$
 DECLARE
-    table_names text[];
+    table_names TEXT[];
 BEGIN
-    SELECT array_agg(tablename)
+    SELECT array_agg(tablename::TEXT)
     INTO table_names
     FROM pg_tables
     WHERE schemaname = 'public'
     AND tablename NOT LIKE 'pg_%'
     AND tablename != 'schema_migrations';
     
-    RETURN COALESCE(table_names, ARRAY[]::text[]);
+    RETURN COALESCE(table_names, ARRAY[]::TEXT[]);
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- Function to get columns for a specific table
-CREATE OR REPLACE FUNCTION get_table_columns(table_name text)
+CREATE OR REPLACE FUNCTION get_table_columns(table_name TEXT)
 RETURNS TABLE(
-    column_name text,
-    data_type text,
-    is_nullable text,
-    column_default text,
-    character_maximum_length integer
+    column_name TEXT,
+    data_type TEXT,
+    is_nullable TEXT,
+    column_default TEXT,
+    character_maximum_length INTEGER
 ) AS $$
 BEGIN
     RETURN QUERY
     SELECT 
-        c.column_name::text,
-        c.data_type::text,
-        c.is_nullable::text,
-        c.column_default::text,
+        c.column_name::TEXT,
+        c.data_type::TEXT,
+        c.is_nullable::TEXT,
+        c.column_default::TEXT,
         c.character_maximum_length
     FROM information_schema.columns c
     WHERE c.table_schema = 'public'
@@ -42,9 +42,10 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- Grant permissions
+-- Grant execute permissions to all roles
 GRANT EXECUTE ON FUNCTION get_table_names() TO anon, authenticated, service_role;
-GRANT EXECUTE ON FUNCTION get_table_columns(text) TO anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION get_table_columns(TEXT) TO anon, authenticated, service_role;
 
 -- Test the functions
-SELECT get_table_names();
+SELECT 'Schema functions created successfully!' as status;
+SELECT get_table_names() as available_tables;
