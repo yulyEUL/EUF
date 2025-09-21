@@ -24,6 +24,7 @@ interface ApiResponse {
   schema: DatabaseSchema
   tableCount: number
   message: string
+  method?: string
   error?: string
   details?: string
   code?: string
@@ -92,6 +93,7 @@ export function DatabaseViewer() {
     if (dataType.includes("int") || dataType.includes("numeric")) return "bg-green-100 text-green-800"
     if (dataType.includes("timestamp") || dataType.includes("date")) return "bg-purple-100 text-purple-800"
     if (dataType.includes("boolean")) return "bg-orange-100 text-orange-800"
+    if (dataType.includes("uuid")) return "bg-indigo-100 text-indigo-800"
     return "bg-gray-100 text-gray-800"
   }
 
@@ -138,35 +140,14 @@ export function DatabaseViewer() {
 
           <div className="space-y-4">
             <div className="bg-muted p-4 rounded-lg">
-              <h4 className="font-semibold mb-2">Troubleshooting Checklist:</h4>
-              <div className="space-y-2 text-sm">
-                <div className="flex items-center gap-2">
-                  <div className="w-4 h-4 border border-gray-400 rounded"></div>
-                  <span>Supabase project is active and accessible</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-4 h-4 border border-gray-400 rounded"></div>
-                  <span>Environment variables are set in Vercel</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-4 h-4 border border-gray-400 rounded"></div>
-                  <span>Database setup script has been executed</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-4 h-4 border border-gray-400 rounded"></div>
-                  <span>Service role key has proper permissions</span>
-                </div>
+              <h4 className="font-semibold mb-2">Quick Fix:</h4>
+              <p className="text-sm mb-3">Your database connection works, but the tables aren't set up yet.</p>
+              <div className="bg-blue-50 p-3 rounded border-l-4 border-blue-400">
+                <p className="text-blue-800 text-sm font-medium">
+                  Run the database setup script in your Supabase SQL Editor:
+                </p>
+                <code className="text-blue-900 text-xs block mt-1">scripts/create-complete-schema.sql</code>
               </div>
-            </div>
-
-            <div className="bg-blue-50 p-4 rounded-lg">
-              <h5 className="font-semibold text-blue-900 mb-2">Quick Fix Steps:</h5>
-              <ol className="text-blue-800 text-sm space-y-1">
-                <li>1. Go to Supabase → Settings → API</li>
-                <li>2. Copy your service_role key</li>
-                <li>3. Update SUPABASE_SERVICE_ROLE_KEY in Vercel</li>
-                <li>4. Redeploy your application</li>
-              </ol>
             </div>
 
             <Button onClick={fetchSchema} className="w-full">
@@ -190,13 +171,22 @@ export function DatabaseViewer() {
             <CardTitle className="flex items-center gap-2">
               <Database className="h-5 w-5" />
               Database Schema
-              <Badge variant="default" className="ml-2">
-                <CheckCircle className="h-3 w-3 mr-1" />
-                Connected
-              </Badge>
+              {tableNames.length > 0 ? (
+                <Badge variant="default" className="ml-2">
+                  <CheckCircle className="h-3 w-3 mr-1" />
+                  Connected
+                </Badge>
+              ) : (
+                <Badge variant="secondary" className="ml-2">
+                  <AlertCircle className="h-3 w-3 mr-1" />
+                  No Tables
+                </Badge>
+              )}
             </CardTitle>
             <CardDescription>
-              {tableNames.length} tables • {totalColumns} total columns
+              {tableNames.length > 0
+                ? `${tableNames.length} tables • ${totalColumns} total columns`
+                : "Database connected but no tables found"}
             </CardDescription>
           </div>
           <div className="flex gap-2">
@@ -220,7 +210,9 @@ export function DatabaseViewer() {
               <strong>No tables found.</strong> Your database connection is working, but no tables exist yet.
               <br />
               <br />
-              <strong>Next step:</strong> Run the database setup script in your Supabase SQL Editor.
+              <strong>Next step:</strong> Run the database setup script in your Supabase SQL Editor:
+              <br />
+              <code className="bg-muted px-2 py-1 rounded text-sm">scripts/create-complete-schema.sql</code>
             </AlertDescription>
           </Alert>
         ) : (
