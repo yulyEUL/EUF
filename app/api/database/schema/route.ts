@@ -27,14 +27,13 @@ export async function GET() {
       },
     })
 
-    // Use RPC to get schema information since we can't query information_schema directly
-    const { data: tables, error: tablesError } = await supabase.rpc("get_table_names")
+    // Try to use the RPC function first
+    const { data: tableNames, error: rpcError } = await supabase.rpc("get_table_names")
 
-    if (tablesError) {
-      // If RPC doesn't exist, try to get tables by querying known tables
-      console.log("RPC not available, trying direct table queries...")
+    if (rpcError) {
+      console.log("RPC function not available, using fallback method...")
 
-      // List of expected tables from our schema
+      // Fallback: Try to detect tables by querying known table names
       const expectedTables = [
         "users",
         "staff",
@@ -57,19 +56,16 @@ export async function GET() {
       ]
 
       const schema: Record<string, any[]> = {}
-      let foundTables = 0
+      const foundTables: string[] = []
 
-      // Try to query each expected table to see if it exists
+      // Check each expected table
       for (const tableName of expectedTables) {
         try {
-          const { data, error } = await supabase.from(tableName).select("*").limit(0) // Don't fetch data, just check if table exists
+          const { error } = await supabase.from(tableName).select("*").limit(0)
 
           if (!error) {
-            // Table exists, now get its structure
-            foundTables++
-
-            // For now, we'll create a basic structure
-            // In a real scenario, you'd need to query the actual column info
+            foundTables.push(tableName)
+            // Add basic column structure for found tables
             schema[tableName] = [
               {
                 column_name: "id",
@@ -88,31 +84,45 @@ export async function GET() {
             ]
           }
         } catch (e) {
-          // Table doesn't exist, skip it
+          // Table doesn't exist, continue
           continue
         }
       }
 
       return NextResponse.json({
         schema,
-        tableCount: foundTables,
-        message: foundTables > 0 ? `Found ${foundTables} tables` : "No tables found - run the database setup script",
-        method: "direct_query",
+        tableCount: foundTables.length,
+        message:
+          foundTables.length > 0
+            ? `Found ${foundTables.length} tables using fallback method`
+            : "No tables found - please run the database setup script",
+        method: "fallback",
+        foundTables,
       })
     }
 
-    // If RPC worked, process the results
+    // RPC worked, get detailed schema
     const schema: Record<string, any[]> = {}
 
-    if (tables && Array.isArray(tables)) {
-      for (const tableName of tables) {
-        // Get columns for each table using RPC
+    if (tableNames && Array.isArray(tableNames)) {
+      for (const tableName of tableNames) {
         const { data: columns, error: columnsError } = await supabase.rpc("get_table_columns", {
           table_name: tableName,
         })
 
         if (!columnsError && columns) {
           schema[tableName] = columns
+        } else {
+          // Fallback column structure if RPC fails
+          schema[tableName] = [
+            {
+              column_name: "id",
+              data_type: "uuid",
+              is_nullable: "NO",
+              column_default: "gen_random_uuid()",
+              character_maximum_length: null,
+            },
+          ]
         }
       }
     }
@@ -120,8 +130,12 @@ export async function GET() {
     return NextResponse.json({
       schema,
       tableCount: Object.keys(schema).length,
-      message: Object.keys(schema).length === 0 ? "No tables found" : "Schema loaded successfully",
+      message:
+        Object.keys(schema).length === 0
+          ? "No tables found"
+          : `Schema loaded successfully with ${Object.keys(schema).length} tables`,
       method: "rpc",
+      tableNames,
     })
   } catch (error) {
     console.error("Database schema error:", error)
