@@ -4,8 +4,9 @@ import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
-import { ChevronDown, ChevronRight, Database, Table, AlertCircle, RefreshCw, CheckCircle } from "lucide-react"
+import { ChevronDown, ChevronRight, Database, Table, AlertCircle, RefreshCw, CheckCircle, Search } from "lucide-react"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 
 interface Column {
@@ -23,13 +24,13 @@ interface DatabaseSchema {
 interface ApiResponse {
   schema: DatabaseSchema
   tableCount: number
+  totalColumns?: number
   message: string
   method?: string
-  foundTables?: string[]
-  tableNames?: string[]
   error?: string
   details?: string
-  code?: string
+  debug?: any
+  errors?: any
 }
 
 export function DatabaseViewer() {
@@ -38,11 +39,14 @@ export function DatabaseViewer() {
   const [error, setError] = useState<string | null>(null)
   const [openTables, setOpenTables] = useState<Set<string>>(new Set())
   const [apiResponse, setApiResponse] = useState<ApiResponse | null>(null)
+  const [searchTerm, setSearchTerm] = useState("")
 
   const fetchSchema = async () => {
     try {
       setLoading(true)
       setError(null)
+
+      console.log("Fetching schema from API...")
 
       const response = await fetch("/api/database/schema", {
         method: "GET",
@@ -55,12 +59,25 @@ export function DatabaseViewer() {
       const data: ApiResponse = await response.json()
       setApiResponse(data)
 
+      console.log("API Response:", data)
+
       if (!response.ok) {
         throw new Error(data.error || `HTTP ${response.status}: ${response.statusText}`)
       }
 
       setSchema(data.schema || {})
-      console.log("Schema loaded:", data)
+
+      // Log detailed info about what we received
+      const tableCount = Object.keys(data.schema || {}).length
+      const totalColumns = Object.values(data.schema || {}).reduce((sum, columns) => sum + columns.length, 0)
+
+      console.log(`Loaded ${tableCount} tables with ${totalColumns} total columns`)
+      console.log("Tables:", Object.keys(data.schema || {}))
+
+      // Log column counts per table
+      Object.entries(data.schema || {}).forEach(([tableName, columns]) => {
+        console.log(`${tableName}: ${columns.length} columns`)
+      })
     } catch (err) {
       console.error("Failed to fetch schema:", err)
       setError(err instanceof Error ? err.message : "Failed to fetch database schema")
@@ -94,12 +111,22 @@ export function DatabaseViewer() {
 
   const getDataTypeColor = (dataType: string) => {
     if (dataType.includes("varchar") || dataType.includes("text")) return "bg-blue-100 text-blue-800"
-    if (dataType.includes("int") || dataType.includes("numeric")) return "bg-green-100 text-green-800"
+    if (dataType.includes("int") || dataType.includes("numeric") || dataType.includes("decimal"))
+      return "bg-green-100 text-green-800"
     if (dataType.includes("timestamp") || dataType.includes("date")) return "bg-purple-100 text-purple-800"
     if (dataType.includes("boolean")) return "bg-orange-100 text-orange-800"
     if (dataType.includes("uuid")) return "bg-indigo-100 text-indigo-800"
+    if (dataType.includes("json")) return "bg-yellow-100 text-yellow-800"
     return "bg-gray-100 text-gray-800"
   }
+
+  const filteredTables = Object.keys(schema)
+    .filter(
+      (tableName) =>
+        tableName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        schema[tableName].some((col) => col.column_name.toLowerCase().includes(searchTerm.toLowerCase())),
+    )
+    .sort()
 
   if (loading) {
     return (
@@ -142,16 +169,28 @@ export function DatabaseViewer() {
             </AlertDescription>
           </Alert>
 
+          {apiResponse?.debug && (
+            <div className="bg-muted p-4 rounded-lg mb-4">
+              <h4 className="font-semibold mb-2">Debug Information:</h4>
+              <pre className="text-xs overflow-auto">{JSON.stringify(apiResponse.debug, null, 2)}</pre>
+            </div>
+          )}
+
+          {apiResponse?.errors && (
+            <div className="bg-muted p-4 rounded-lg mb-4">
+              <h4 className="font-semibold mb-2">Error Details:</h4>
+              <pre className="text-xs overflow-auto">{JSON.stringify(apiResponse.errors, null, 2)}</pre>
+            </div>
+          )}
+
           <div className="space-y-4">
             <div className="bg-muted p-4 rounded-lg">
-              <h4 className="font-semibold mb-2">Quick Fix:</h4>
-              <p className="text-sm mb-3">Your database connection works, but the tables aren't set up yet.</p>
-              <div className="bg-blue-50 p-3 rounded border-l-4 border-blue-400">
-                <p className="text-blue-800 text-sm font-medium">
-                  Run the database setup script in your Supabase SQL Editor:
-                </p>
-                <code className="text-blue-900 text-xs block mt-1">scripts/create-complete-schema.sql</code>
-              </div>
+              <h4 className="font-semibold mb-2">Troubleshooting:</h4>
+              <ol className="text-sm space-y-2 list-decimal list-inside">
+                <li>Make sure you've run the schema functions script in Supabase SQL Editor</li>
+                <li>Check that your environment variables are set correctly</li>
+                <li>Verify your Supabase service role key has the right permissions</li>
+              </ol>
             </div>
 
             <Button onClick={fetchSchema} className="w-full">
@@ -164,7 +203,7 @@ export function DatabaseViewer() {
     )
   }
 
-  const tableNames = Object.keys(schema).sort()
+  const tableNames = filteredTables
   const totalColumns = Object.values(schema).reduce((sum, columns) => sum + columns.length, 0)
 
   return (
@@ -212,6 +251,18 @@ export function DatabaseViewer() {
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
+        {tableNames.length > 0 && (
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+            <Input
+              placeholder="Search tables and columns..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-10"
+            />
+          </div>
+        )}
+
         {tableNames.length === 0 ? (
           <Alert>
             <AlertCircle className="h-4 w-4" />
@@ -222,9 +273,6 @@ export function DatabaseViewer() {
               <strong>Next step:</strong> Run the database setup script in your Supabase SQL Editor:
               <br />
               <code className="bg-muted px-2 py-1 rounded text-sm">scripts/create-complete-schema.sql</code>
-              <br />
-              <br />
-              <strong>Debug info:</strong> {apiResponse?.message}
             </AlertDescription>
           </Alert>
         ) : (
@@ -289,6 +337,10 @@ export function DatabaseViewer() {
               </CollapsibleContent>
             </Collapsible>
           ))
+        )}
+
+        {searchTerm && filteredTables.length === 0 && (
+          <div className="text-center py-8 text-muted-foreground">No tables or columns match "{searchTerm}"</div>
         )}
       </CardContent>
     </Card>
