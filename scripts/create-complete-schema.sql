@@ -274,6 +274,47 @@ CREATE TABLE IF NOT EXISTS user_permissions (
   UNIQUE(user_id, module)
 );
 
+-- Email logs table
+CREATE TABLE IF NOT EXISTS email_logs (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  from_email VARCHAR(255) NOT NULL,
+  to_email VARCHAR(255),
+  subject VARCHAR(500),
+  body TEXT,
+  received_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  processed_at TIMESTAMP WITH TIME ZONE,
+  status VARCHAR(20) DEFAULT 'received' CHECK (status IN ('received', 'processed', 'failed', 'ignored')),
+  error_message TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Parsed emails table
+CREATE TABLE IF NOT EXISTS parsed_emails (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  email_log_id UUID REFERENCES email_logs(id),
+  pattern_name VARCHAR(100),
+  extracted_data JSONB,
+  confidence_score DECIMAL(3,2),
+  created_table VARCHAR(100),
+  created_record_id UUID,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Email patterns table
+CREATE TABLE IF NOT EXISTS email_patterns (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  name VARCHAR(100) UNIQUE NOT NULL,
+  description TEXT,
+  from_pattern VARCHAR(255),
+  subject_pattern VARCHAR(500),
+  body_patterns JSONB,
+  extraction_rules JSONB,
+  target_table VARCHAR(100),
+  is_active BOOLEAN DEFAULT true,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
 -- Create indexes for better performance
 CREATE INDEX IF NOT EXISTS idx_trips_dates ON trips(start_date, end_date);
 CREATE INDEX IF NOT EXISTS idx_trips_status ON trips(status);
@@ -314,33 +355,6 @@ BEGIN
     END LOOP;
 END;
 $$;
-
--- Create RPC function for schema info (optional, for better performance)
-CREATE OR REPLACE FUNCTION get_schema_info()
-RETURNS TABLE(table_name text, columns jsonb) AS $$
-BEGIN
-    RETURN QUERY
-    SELECT 
-        t.table_name::text,
-        jsonb_agg(
-            jsonb_build_object(
-                'column_name', c.column_name,
-                'data_type', c.data_type,
-                'is_nullable', c.is_nullable,
-                'column_default', c.column_default,
-                'character_maximum_length', c.character_maximum_length
-            ) ORDER BY c.ordinal_position
-        ) as columns
-    FROM information_schema.tables t
-    JOIN information_schema.columns c ON t.table_name = c.table_name
-    WHERE t.table_schema = 'public' 
-    AND t.table_type = 'BASE TABLE'
-    AND t.table_name NOT LIKE 'pg_%'
-    AND t.table_name NOT IN ('spatial_ref_sys', 'geography_columns', 'geometry_columns')
-    GROUP BY t.table_name
-    ORDER BY t.table_name;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- Insert sample data (optional)
 INSERT INTO users (email, full_name, role) VALUES
