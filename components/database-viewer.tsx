@@ -2,12 +2,10 @@
 
 import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
-import { RefreshCw, Database, TableIcon, AlertCircle, CheckCircle, Settings } from "lucide-react"
-import { useToast } from "@/hooks/use-toast"
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
+import { ChevronDown, ChevronRight, Database, Table, AlertCircle, RefreshCw, CheckCircle } from "lucide-react"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 
 interface Column {
@@ -15,7 +13,7 @@ interface Column {
   data_type: string
   is_nullable: string
   column_default: string | null
-  character_maximum_length?: number
+  character_maximum_length: number | null
 }
 
 interface DatabaseSchema {
@@ -28,58 +26,38 @@ interface ApiResponse {
   message: string
   error?: string
   details?: string
-  hint?: string
 }
 
 export function DatabaseViewer() {
   const [schema, setSchema] = useState<DatabaseSchema>({})
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [connectionStatus, setConnectionStatus] = useState<"checking" | "connected" | "error">("checking")
-  const { toast } = useToast()
+  const [openTables, setOpenTables] = useState<Set<string>>(new Set())
 
   const fetchSchema = async () => {
-    setLoading(true)
-    setError(null)
-    setConnectionStatus("checking")
-
     try {
+      setLoading(true)
+      setError(null)
+
       const response = await fetch("/api/database/schema", {
         method: "GET",
         headers: {
           "Content-Type": "application/json",
         },
+        cache: "no-store",
       })
 
       const data: ApiResponse = await response.json()
 
-      if (response.ok) {
-        setSchema(data.schema || {})
-        setConnectionStatus("connected")
-
-        const tableCount = Object.keys(data.schema || {}).length
-        toast({
-          title: "Database Connected",
-          description: `Found ${tableCount} tables`,
-        })
-      } else {
-        setError(data.error || "Failed to fetch database schema")
-        setConnectionStatus("error")
-        toast({
-          title: "Connection Error",
-          description: data.error || "Failed to fetch database schema",
-          variant: "destructive",
-        })
+      if (!response.ok) {
+        throw new Error(data.error || `HTTP ${response.status}: ${response.statusText}`)
       }
-    } catch (error) {
-      const errorMessage = "Failed to connect to database API"
-      setError(errorMessage)
-      setConnectionStatus("error")
-      toast({
-        title: "API Error",
-        description: errorMessage,
-        variant: "destructive",
-      })
+
+      setSchema(data.schema || {})
+      console.log("Schema loaded:", data)
+    } catch (err) {
+      console.error("Failed to fetch schema:", err)
+      setError(err instanceof Error ? err.message : "Failed to fetch database schema")
     } finally {
       setLoading(false)
     }
@@ -89,8 +67,32 @@ export function DatabaseViewer() {
     fetchSchema()
   }, [])
 
-  const tableNames = Object.keys(schema).sort()
-  const totalColumns = Object.values(schema).reduce((sum, columns) => sum + columns.length, 0)
+  const toggleTable = (tableName: string) => {
+    const newOpenTables = new Set(openTables)
+    if (newOpenTables.has(tableName)) {
+      newOpenTables.delete(tableName)
+    } else {
+      newOpenTables.add(tableName)
+    }
+    setOpenTables(newOpenTables)
+  }
+
+  const toggleAllTables = () => {
+    const tableNames = Object.keys(schema)
+    if (openTables.size === tableNames.length) {
+      setOpenTables(new Set())
+    } else {
+      setOpenTables(new Set(tableNames))
+    }
+  }
+
+  const getDataTypeColor = (dataType: string) => {
+    if (dataType.includes("varchar") || dataType.includes("text")) return "bg-blue-100 text-blue-800"
+    if (dataType.includes("int") || dataType.includes("numeric")) return "bg-green-100 text-green-800"
+    if (dataType.includes("timestamp") || dataType.includes("date")) return "bg-purple-100 text-purple-800"
+    if (dataType.includes("boolean")) return "bg-orange-100 text-orange-800"
+    return "bg-gray-100 text-gray-800"
+  }
 
   if (loading) {
     return (
@@ -121,7 +123,7 @@ export function DatabaseViewer() {
             Database Schema
             <Badge variant="destructive" className="ml-2">
               <AlertCircle className="h-3 w-3 mr-1" />
-              Connection Failed
+              Error
             </Badge>
           </CardTitle>
         </CardHeader>
@@ -134,46 +136,36 @@ export function DatabaseViewer() {
           </Alert>
 
           <div className="space-y-4">
-            <div>
-              <h4 className="font-semibold mb-2 flex items-center gap-2">
-                <Settings className="h-4 w-4" />
-                Troubleshooting Steps:
-              </h4>
-              <ol className="list-decimal list-inside space-y-3 text-sm">
-                <li>
-                  <strong>Check your Vercel environment variables:</strong>
-                  <ul className="list-disc list-inside ml-4 mt-2 space-y-1">
-                    <li>
-                      <code className="bg-gray-100 px-2 py-1 rounded">NEXT_PUBLIC_SUPABASE_URL</code>
-                    </li>
-                    <li>
-                      <code className="bg-gray-100 px-2 py-1 rounded">SUPABASE_SERVICE_ROLE_KEY</code>
-                    </li>
-                  </ul>
-                </li>
-                <li>
-                  <strong>Verify your Supabase project is active</strong>
-                  <br />
-                  <span className="text-muted-foreground">Go to supabase.com and check your project status</span>
-                </li>
-                <li>
-                  <strong>Run the database setup script</strong>
-                  <br />
-                  <span className="text-muted-foreground">Execute the SQL script in your Supabase SQL Editor</span>
-                </li>
-                <li>
-                  <strong>Check service role key permissions</strong>
-                  <br />
-                  <span className="text-muted-foreground">Make sure it has full database access</span>
-                </li>
-              </ol>
+            <div className="bg-muted p-4 rounded-lg">
+              <h4 className="font-semibold mb-2">Troubleshooting Checklist:</h4>
+              <div className="space-y-2 text-sm">
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 border border-gray-400 rounded"></div>
+                  <span>Supabase project is active and accessible</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 border border-gray-400 rounded"></div>
+                  <span>Environment variables are set in Vercel</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 border border-gray-400 rounded"></div>
+                  <span>Database setup script has been executed</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 border border-gray-400 rounded"></div>
+                  <span>Service role key has proper permissions</span>
+                </div>
+              </div>
             </div>
 
             <div className="bg-blue-50 p-4 rounded-lg">
-              <h5 className="font-semibold text-blue-900 mb-2">Quick Fix:</h5>
-              <p className="text-blue-800 text-sm">
-                Go to your Supabase project → Settings → API → Copy your service role key and update it in Vercel.
-              </p>
+              <h5 className="font-semibold text-blue-900 mb-2">Quick Fix Steps:</h5>
+              <ol className="text-blue-800 text-sm space-y-1">
+                <li>1. Go to Supabase → Settings → API</li>
+                <li>2. Copy your service_role key</li>
+                <li>3. Update SUPABASE_SERVICE_ROLE_KEY in Vercel</li>
+                <li>4. Redeploy your application</li>
+              </ol>
             </div>
 
             <Button onClick={fetchSchema} className="w-full">
@@ -185,6 +177,9 @@ export function DatabaseViewer() {
       </Card>
     )
   }
+
+  const tableNames = Object.keys(schema).sort()
+  const totalColumns = Object.values(schema).reduce((sum, columns) => sum + columns.length, 0)
 
   return (
     <Card>
@@ -203,13 +198,20 @@ export function DatabaseViewer() {
               {tableNames.length} tables • {totalColumns} total columns
             </CardDescription>
           </div>
-          <Button variant="outline" size="sm" onClick={fetchSchema}>
-            <RefreshCw className="h-4 w-4 mr-2" />
-            Refresh
-          </Button>
+          <div className="flex gap-2">
+            {tableNames.length > 0 && (
+              <Button variant="outline" size="sm" onClick={toggleAllTables}>
+                {openTables.size === tableNames.length ? "Collapse All" : "Expand All"}
+              </Button>
+            )}
+            <Button variant="outline" size="sm" onClick={fetchSchema}>
+              <RefreshCw className="h-4 w-4 mr-2" />
+              Refresh
+            </Button>
+          </div>
         </div>
       </CardHeader>
-      <CardContent>
+      <CardContent className="space-y-4">
         {tableNames.length === 0 ? (
           <Alert>
             <AlertCircle className="h-4 w-4" />
@@ -217,75 +219,71 @@ export function DatabaseViewer() {
               <strong>No tables found.</strong> Your database connection is working, but no tables exist yet.
               <br />
               <br />
-              <strong>Next step:</strong> Run the database setup script to create your tables.
-              <br />
-              Go to your Supabase SQL Editor and run the complete setup script.
+              <strong>Next step:</strong> Run the database setup script in your Supabase SQL Editor.
             </AlertDescription>
           </Alert>
         ) : (
-          <Tabs defaultValue={tableNames[0]} className="w-full">
-            <TabsList className="grid grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-1 h-auto p-1 mb-4">
-              {tableNames.slice(0, 18).map((tableName) => (
-                <TabsTrigger
-                  key={tableName}
-                  value={tableName}
-                  className="text-xs px-2 py-1 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
-                >
-                  <TableIcon className="h-3 w-3 mr-1" />
-                  {tableName}
-                </TabsTrigger>
-              ))}
-            </TabsList>
-
-            {tableNames.map((tableName) => (
-              <TabsContent key={tableName} value={tableName} className="mt-4">
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-lg flex items-center gap-2">
-                      <TableIcon className="h-5 w-5" />
-                      {tableName}
-                    </CardTitle>
-                    <CardDescription>{schema[tableName]?.length || 0} columns</CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="rounded-md border">
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead>Column Name</TableHead>
-                            <TableHead>Data Type</TableHead>
-                            <TableHead>Nullable</TableHead>
-                            <TableHead>Default Value</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {schema[tableName]?.map((column) => (
-                            <TableRow key={column.column_name}>
-                              <TableCell className="font-medium">{column.column_name}</TableCell>
-                              <TableCell>
-                                <Badge variant="secondary">
-                                  {column.data_type}
-                                  {column.character_maximum_length && `(${column.character_maximum_length})`}
-                                </Badge>
-                              </TableCell>
-                              <TableCell>
-                                <Badge variant={column.is_nullable === "YES" ? "outline" : "default"}>
-                                  {column.is_nullable === "YES" ? "Yes" : "No"}
-                                </Badge>
-                              </TableCell>
-                              <TableCell className="text-sm text-muted-foreground max-w-32 truncate">
-                                {column.column_default || "-"}
-                              </TableCell>
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
+          tableNames.map((tableName) => (
+            <Collapsible key={tableName} open={openTables.has(tableName)} onOpenChange={() => toggleTable(tableName)}>
+              <CollapsibleTrigger className="flex items-center gap-2 w-full p-3 bg-muted/50 rounded-lg hover:bg-muted transition-colors">
+                {openTables.has(tableName) ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                <Table className="h-4 w-4" />
+                <span className="font-medium">{tableName}</span>
+                <Badge variant="secondary" className="ml-auto">
+                  {schema[tableName].length} columns
+                </Badge>
+              </CollapsibleTrigger>
+              <CollapsibleContent className="mt-2">
+                <div className="border rounded-lg overflow-hidden">
+                  <div className="grid grid-cols-5 gap-4 p-3 bg-muted/30 font-medium text-sm">
+                    <div>Column Name</div>
+                    <div>Data Type</div>
+                    <div>Nullable</div>
+                    <div>Default</div>
+                    <div>Max Length</div>
+                  </div>
+                  {schema[tableName].map((column, index) => (
+                    <div
+                      key={column.column_name}
+                      className={`grid grid-cols-5 gap-4 p-3 text-sm ${
+                        index % 2 === 0 ? "bg-background" : "bg-muted/20"
+                      }`}
+                    >
+                      <div className="font-mono font-medium">{column.column_name}</div>
+                      <div>
+                        <Badge variant="outline" className={getDataTypeColor(column.data_type)}>
+                          {column.data_type}
+                        </Badge>
+                      </div>
+                      <div>
+                        <Badge variant={column.is_nullable === "YES" ? "secondary" : "destructive"}>
+                          {column.is_nullable === "YES" ? "Yes" : "No"}
+                        </Badge>
+                      </div>
+                      <div className="font-mono text-xs">
+                        {column.column_default ? (
+                          <span className="bg-muted px-2 py-1 rounded">
+                            {column.column_default.length > 20
+                              ? `${column.column_default.substring(0, 20)}...`
+                              : column.column_default}
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground">-</span>
+                        )}
+                      </div>
+                      <div>
+                        {column.character_maximum_length ? (
+                          <Badge variant="outline">{column.character_maximum_length}</Badge>
+                        ) : (
+                          <span className="text-muted-foreground">-</span>
+                        )}
+                      </div>
                     </div>
-                  </CardContent>
-                </Card>
-              </TabsContent>
-            ))}
-          </Tabs>
+                  ))}
+                </div>
+              </CollapsibleContent>
+            </Collapsible>
+          ))
         )}
       </CardContent>
     </Card>
