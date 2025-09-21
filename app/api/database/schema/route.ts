@@ -17,14 +17,37 @@ export async function GET() {
 
     const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
 
-    // Get all tables in the public schema
+    // Test connection first
+    const { data: testData, error: testError } = await supabase
+      .from("pg_tables")
+      .select("tablename")
+      .eq("schemaname", "public")
+      .limit(1)
+
+    if (testError) {
+      console.error("Connection test failed:", testError)
+
+      // Try alternative method using raw SQL
+      const { data: rawData, error: rawError } = await supabase.rpc("get_tables")
+
+      if (rawError) {
+        return NextResponse.json(
+          {
+            error: "Database connection failed",
+            details: testError.message,
+            hint: "Check your Supabase service role key and database permissions",
+          },
+          { status: 500 },
+        )
+      }
+    }
+
+    // Get all tables using pg_tables (more reliable)
     const { data: tablesData, error: tablesError } = await supabase
-      .from("information_schema.tables")
-      .select("table_name")
-      .eq("table_schema", "public")
-      .not("table_name", "like", "pg_%")
-      .not("table_name", "like", "information_schema%")
-      .not("table_name", "eq", "schema_migrations")
+      .from("pg_tables")
+      .select("tablename")
+      .eq("schemaname", "public")
+      .not("tablename", "like", "pg_%")
 
     if (tablesError) {
       console.error("Tables query error:", tablesError)
@@ -43,15 +66,24 @@ export async function GET() {
 
     if (tablesData && tablesData.length > 0) {
       for (const table of tablesData) {
-        const { data: columnsData, error: columnsError } = await supabase
-          .from("information_schema.columns")
-          .select("column_name, data_type, is_nullable, column_default, character_maximum_length")
-          .eq("table_schema", "public")
-          .eq("table_name", table.table_name)
-          .order("ordinal_position")
+        const { data: columnsData, error: columnsError } = await supabase.rpc("get_table_columns", {
+          table_name: table.tablename,
+        })
 
         if (!columnsError && columnsData) {
-          schema[table.table_name] = columnsData
+          schema[table.tablename] = columnsData
+        } else {
+          // Fallback to information_schema
+          const { data: fallbackColumns, error: fallbackError } = await supabase
+            .from("information_schema.columns")
+            .select("column_name, data_type, is_nullable, column_default, character_maximum_length")
+            .eq("table_schema", "public")
+            .eq("table_name", table.tablename)
+            .order("ordinal_position")
+
+          if (!fallbackError && fallbackColumns) {
+            schema[table.tablename] = fallbackColumns
+          }
         }
       }
     }
