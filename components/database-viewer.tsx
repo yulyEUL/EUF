@@ -26,6 +26,7 @@ interface ApiResponse {
   message: string
   error?: string
   details?: string
+  code?: string
 }
 
 export function DatabaseViewer() {
