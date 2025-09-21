@@ -3,21 +3,18 @@ import { NextResponse } from "next/server"
 
 export async function GET() {
   try {
-    // Check environment variables
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
     const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
 
     if (!supabaseUrl || !supabaseServiceKey) {
-      return NextResponse.json(
-        {
-          error: "Missing environment variables",
-          details: {
-            hasUrl: !!supabaseUrl,
-            hasServiceKey: !!supabaseServiceKey,
-          },
+      return NextResponse.json({
+        status: "error",
+        message: "Missing environment variables",
+        details: {
+          hasUrl: !!supabaseUrl,
+          hasServiceKey: !!supabaseServiceKey,
         },
-        { status: 500 },
-      )
+      })
     }
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey, {
@@ -27,124 +24,62 @@ export async function GET() {
       },
     })
 
-    // Try to use the RPC function first
-    const { data: tableNames, error: rpcError } = await supabase.rpc("get_table_names")
+    // Test basic connection by trying to query a simple table
+    const expectedTables = [
+      "users",
+      "staff",
+      "vehicles",
+      "customers",
+      "trips",
+      "earnings",
+      "expenses",
+      "tasks",
+      "maintenance_records",
+      "payments",
+      "invoices",
+      "vendors",
+      "expense_categories",
+      "import_logs",
+      "user_permissions",
+      "email_logs",
+      "parsed_emails",
+      "email_patterns",
+    ]
 
-    if (rpcError) {
-      console.log("RPC function not available, using fallback method...")
+    let tablesFound = false
+    const foundTablesList = []
 
-      // Fallback: Try to detect tables by querying known table names
-      const expectedTables = [
-        "users",
-        "staff",
-        "vehicles",
-        "customers",
-        "trips",
-        "earnings",
-        "expenses",
-        "tasks",
-        "maintenance_records",
-        "payments",
-        "invoices",
-        "vendors",
-        "expense_categories",
-        "import_logs",
-        "user_permissions",
-        "email_logs",
-        "parsed_emails",
-        "email_patterns",
-      ]
-
-      const schema: Record<string, any[]> = {}
-      const foundTables: string[] = []
-
-      // Check each expected table
-      for (const tableName of expectedTables) {
-        try {
-          const { error } = await supabase.from(tableName).select("*").limit(0)
-
-          if (!error) {
-            foundTables.push(tableName)
-            // Add basic column structure for found tables
-            schema[tableName] = [
-              {
-                column_name: "id",
-                data_type: "uuid",
-                is_nullable: "NO",
-                column_default: "gen_random_uuid()",
-                character_maximum_length: null,
-              },
-              {
-                column_name: "created_at",
-                data_type: "timestamp with time zone",
-                is_nullable: "NO",
-                column_default: "now()",
-                character_maximum_length: null,
-              },
-            ]
-          }
-        } catch (e) {
-          // Table doesn't exist, continue
-          continue
+    // Check if any of our expected tables exist
+    for (const tableName of expectedTables) {
+      try {
+        const { error } = await supabase.from(tableName).select("*").limit(0)
+        if (!error) {
+          tablesFound = true
+          foundTablesList.push(tableName)
         }
-      }
-
-      return NextResponse.json({
-        schema,
-        tableCount: foundTables.length,
-        message:
-          foundTables.length > 0
-            ? `Found ${foundTables.length} tables using fallback method`
-            : "No tables found - please run the database setup script",
-        method: "fallback",
-        foundTables,
-      })
-    }
-
-    // RPC worked, get detailed schema
-    const schema: Record<string, any[]> = {}
-
-    if (tableNames && Array.isArray(tableNames)) {
-      for (const tableName of tableNames) {
-        const { data: columns, error: columnsError } = await supabase.rpc("get_table_columns", {
-          table_name: tableName,
-        })
-
-        if (!columnsError && columns) {
-          schema[tableName] = columns
-        } else {
-          // Fallback column structure if RPC fails
-          schema[tableName] = [
-            {
-              column_name: "id",
-              data_type: "uuid",
-              is_nullable: "NO",
-              column_default: "gen_random_uuid()",
-              character_maximum_length: null,
-            },
-          ]
-        }
+      } catch (e) {
+        // Table doesn't exist, continue
+        continue
       }
     }
 
     return NextResponse.json({
-      schema,
-      tableCount: Object.keys(schema).length,
-      message:
-        Object.keys(schema).length === 0
-          ? "No tables found"
-          : `Schema loaded successfully with ${Object.keys(schema).length} tables`,
-      method: "rpc",
-      tableNames,
+      status: "success",
+      message: tablesFound
+        ? "Database connection successful and tables exist"
+        : "Database connection successful but no tables found",
+      supabaseUrl: supabaseUrl.substring(0, 30) + "...",
+      tablesFound,
+      foundTables: foundTablesList,
+      tableCount: foundTablesList.length,
     })
   } catch (error) {
-    console.error("Database schema error:", error)
-    return NextResponse.json(
-      {
-        error: "Unexpected error",
-        details: error instanceof Error ? error.message : "Unknown error occurred",
-      },
-      { status: 500 },
-    )
+    return NextResponse.json({
+      status: "connection_error",
+      message: "Failed to connect to database",
+      error: error instanceof Error ? error.message : "Unknown error",
+      code: (error as any)?.code || "UNKNOWN",
+      details: (error as any)?.details || null,
+    })
   }
 }
